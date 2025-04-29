@@ -1,6 +1,6 @@
 # `nanoflrt`
 
-A custom implementation of a variation of the FLRT algorithm from [FLRT: Fluent Student-Teacher Redteaming](https://arxiv.org/abs/2407.17447), here we replace the worst candidate from the buffer, and don't (currently) use the additional loss functions outlined in the FLRT paper (use only cross-entropy and ignore the finetuning and perplexity loss).
+A custom implementation of a variation of the FLRT algorithm from [FLRT: Fluent Student-Teacher Redteaming](https://arxiv.org/abs/2407.17447), here we replace the worst candidate from the buffer, and don't (currently) use the additional loss functions outlined in the FLRT paper (we only use cross-entropy and ignore the finetuning and perplexity losses).
 
 ## Installation
 
