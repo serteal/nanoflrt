@@ -38,7 +38,6 @@ class FLRTConfig:
     k2: int = 64
     num_steps: int = 500
     init_len: int = 10
-    max_len: int | None = None
     buffer_size: int = 10
     p_add: float = 0.5
     p_swap: float = 0.25

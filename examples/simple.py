@@ -34,7 +34,13 @@ def main():
 
     messages = [{"role": "user", "content": args.prompt}]
 
-    config = FLRTConfig()
+    config = FLRTConfig(
+        num_steps=100,
+        init_len=10,
+        seed=42,
+        k1=16,
+        k2=64,
+    )
     result = nanoflrt.run(
         model,
         tokenizer,
