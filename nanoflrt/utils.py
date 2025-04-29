@@ -10,21 +10,18 @@ from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 class AttackBuffer:
     """A buffer that maintains a collection of attack token sequences.
 
-    The buffer stores token sequences (ids) along with their corresponding losses (overall loss,
-    monitor loss, and generator loss). It provides functionality to track and update the best/worst
-    performing attacks based on the loss values.
+    The buffer stores token sequences (ids) along with their corresponding losses. It provides
+    functionality to track and update the best/worst performing attacks based on the loss values.
 
     Args:
-        model (ModelBase): The model used to initialize and tokenize buffer contents
+        tokenizer (PreTrainedTokenizer | PreTrainedTokenizerFast): The tokenizer used to initialize and tokenize buffer contents
         init_len (int): Initial length of random token sequences to generate
         size (int): Maximum number of sequences to store in the buffer
 
     Attributes:
         size (int): Maximum buffer capacity
-        ids (List[Tensor]): List of token sequence tensors
-        losses (Tensor): Overall loss values for each sequence
-        monitor_losses (Tensor): Monitor-specific loss values for each sequence
-        generator_losses (Tensor): Generator-specific loss values for each sequence
+        ids (list[Tensor]): List of token sequence tensors
+        losses (Tensor): Loss values for each sequence
     """
 
     def __init__(

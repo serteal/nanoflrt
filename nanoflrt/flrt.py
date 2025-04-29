@@ -63,7 +63,6 @@ class FLRT:
 
     NOTE: This optimizer is designed to be run with a single batch
         and num steps (in optimizer config) to be set to large values.
-        Each call to step starts the optimization from scratch.
     """
 
     def __init__(
