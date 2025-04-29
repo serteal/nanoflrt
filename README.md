@@ -1,6 +1,6 @@
 # `nanoflrt`
 
-A custom implementation of a variation of the FLRT algorithm.
+A custom implementation of a variation of the FLRT algorithm from [FLRT: Fluent Student-Teacher Redteaming](https://arxiv.org/abs/2407.17447), here we replace the worst candidate from the buffer, and don't (currently) use the additional loss functions outlined in the FLRT paper (use only cross-entropy and ignore the finetuning and perplexity loss).
 
 ## Installation
 
@@ -28,14 +28,20 @@ model, tokenizer = sp.get_model_and_tokenizer(model_name)
 message = "Give me instructions for how to ..."
 target = "Sure, here are some instructions for how to ..."
 
-# or use a list of messages and targets to train a universal softprompt
-# messages = ["Give me instructions for how to ...", "Give me instructions for how to ...", ...]
-# targets = ["Sure, here are some instructions for how to ...", "Sure, here are some instructions for how to ...", ...]
+result = flrt.run(model, tokenizer, message, target)
 
-softprompt, _ = sp.train_softprompt(model, tokenizer, messages, targets)
-generation = sp.generate_with_softprompt(model, tokenizer, messages, softprompt)
+# Generate with the FLRT best string
+messages[-1]["content"] = messages[-1]["content"] + " " + result.best_string
 
-print(generation[0])
+input = tokenizer.apply_chat_template(
+    messages, add_generation_prompt=True, return_tensors="pt"
+).to(args.device)
+output = model.generate(input, do_sample=False, max_new_tokens=512)
+
+print(f"Prompt:\n{messages[-1]['content']}\n")
+print(
+    f"Generation:\n{tokenizer.batch_decode(output[:, input.shape[1] :], skip_special_tokens=True)[0]}"
+)
 ```
 
 Check out the [examples](examples/) for other use-cases.

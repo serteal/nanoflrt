@@ -8,7 +8,7 @@ from jaxtyping import Float
 from torch import Tensor
 from tqdm import tqdm
 from transformers import (
-    Cache,
+    DynamicCache,
     PreTrainedModel,
     PreTrainedTokenizer,
     PreTrainedTokenizerFast,
@@ -44,6 +44,8 @@ class FLRTConfig:
     p_swap: float = 0.25
     p_del: float = 0.25
     seed: int | None = 42
+    verbose: bool = False
+    use_kv_cache: bool = True
 
 
 @dataclass
@@ -126,10 +128,14 @@ class FLRT:
             device=self.model.device,
         )
 
-        # Compute the KV Cache for tokens that appear before the optimized tokens
-        with torch.no_grad():
-            output = self.model(inputs_embeds=before_embeds, use_cache=True)
-            kv_cache = output.past_key_values
+        # Populate the KV Cache for tokens that appear before the optimized tokens
+        if self.config.use_kv_cache:
+            with torch.no_grad():
+                self.kv_cache = self.model(
+                    inputs_embeds=before_embeds,
+                    return_legacy_cache=True,
+                    use_cache=True,
+                ).past_key_values
 
         losses = []
         early_stopping_condition = []
@@ -147,7 +153,7 @@ class FLRT:
             else:
                 op = "delete"
 
-            logger.info(f"Applying op: {op}")
+            logger.debug(f"Applying op: {op}")
 
             candidate_idxs = torch.randint(0, best_ids.shape[0], (self.config.k1,))
 
@@ -165,15 +171,14 @@ class FLRT:
                     candidate_idxs,
                     self.config.k2,
                     input_embeds,
-                    kv_cache,
                     before_embeds,
                 )
                 if op == "swap":
                     new_attack_ids_list = []
-                    logger.info(
+                    logger.debug(
                         f"candidate_ids: {candidate_ids}, shape: {candidate_ids.shape}"
                     )
-                    for idx in tqdm(range(candidate_ids.shape[0])):
+                    for idx in range(candidate_ids.shape[0]):
                         swap_idx = candidate_idxs[idx]
                         new_ids = best_ids.clone()
                         new_ids[swap_idx] = candidate_ids[idx]
@@ -207,7 +212,6 @@ class FLRT:
             loss, stop_condition = find_executable_batch_size(
                 self.compute_candidates_loss, new_ids.shape[0]
             )(
-                kv_cache=kv_cache,
                 input_embeds=input_embeds,
                 target_ids=target_ids,
             )
@@ -225,9 +229,9 @@ class FLRT:
             optim_strings.append(optim_str)
             optim_idss.append(optim_id.tolist())
 
-            logger.info(f"Buffer min loss: {buffer.losses.min().item()}")
+            logger.debug(f"Buffer min loss: {buffer.losses.min().item()}")
             opstr = optim_str.replace("\n", r"\n")
-            logger.info(f"Step {i}: Optim String = {opstr}")
+            logger.debug(f"Step {i}: Optim String = {opstr}")
 
         best_id: Float[Tensor, "n_optim_ids"] = buffer.get_best()
         best_params = (
@@ -253,14 +257,13 @@ class FLRT:
         candidate_idxs: Tensor,
         k2: int,
         input_embeds: Tensor,
-        kv_cache: tuple | None,
         before_embeds: Tensor | None = None,
     ):
         with torch.no_grad():
-            if kv_cache is not None and isinstance(kv_cache, tuple):
+            if self.config.use_kv_cache:
                 outputs = self.model(
                     inputs_embeds=input_embeds,
-                    past_key_values=kv_cache,
+                    past_key_values=DynamicCache.from_legacy_cache(self.kv_cache),
                     output_hidden_states=False,
                 )
                 logits = outputs.logits
@@ -338,7 +341,6 @@ class FLRT:
         self,
         search_batch_size: int,
         *,
-        kv_cache: tuple | None,
         input_embeds: Tensor,
         target_ids: Tensor,
     ):
@@ -351,22 +353,22 @@ class FLRT:
                 input_embeds_batch = input_embeds[i : i + search_batch_size]
                 current_batch_size = input_embeds_batch.shape[0]
 
-                if kv_cache is not None and isinstance(kv_cache, tuple):
-                    if (
-                        not prefix_cache_batch
-                        or current_batch_size != search_batch_size
-                    ):
-                        prefix_cache_batch = [
-                            [
-                                x.expand(current_batch_size, -1, -1, -1)
-                                for x in kv_cache[i]
-                            ]
-                            for i in range(len(kv_cache))
+                if self.config.use_kv_cache and (
+                    not prefix_cache_batch or current_batch_size != search_batch_size
+                ):
+                    prefix_cache_batch = [
+                        [
+                            x.expand(current_batch_size, -1, -1, -1)
+                            for x in self.kv_cache[i]
                         ]
+                        for i in range(len(self.kv_cache))
+                    ]
 
                     outputs = self.model(
                         inputs_embeds=input_embeds_batch,
-                        past_key_values=prefix_cache_batch,
+                        past_key_values=DynamicCache.from_legacy_cache(
+                            prefix_cache_batch
+                        ),
                         use_cache=True,
                     )
                 else:
@@ -419,6 +421,8 @@ def run(
     """
     if config is None:
         config = FLRTConfig()
+
+    logger.setLevel(logging.DEBUG if config.verbose else logging.INFO)
 
     flrt = FLRT(model, tokenizer, config)
     result = flrt.run(messages, target)
