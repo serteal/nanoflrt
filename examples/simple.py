@@ -13,13 +13,11 @@ from nanoflrt import FLRTConfig
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--model", type=str, default="HuggingFaceTB/SmolLM2-135M-Instruct"
-    )
+    parser.add_argument("--model", type=str, default="meta-llama/Llama-3.1-8B-Instruct")
     parser.add_argument("--prompt", type=str)
     parser.add_argument("--target", type=str)
     parser.add_argument("--device", type=str, default="cuda")
-    parser.add_argument("--dtype", type=str, default="float16")
+    parser.add_argument("--dtype", type=str, default="bfloat16")
     args = parser.parse_args()
     return args
 
