@@ -47,7 +47,7 @@ def main():
         config,
     )
 
-    messages[-1]["content"] = messages[-1]["content"] + " " + result.best_string
+    messages[-1]["content"] = messages[-1]["content"] + result.best_string
 
     input = tokenizer.apply_chat_template(
         messages, add_generation_prompt=True, return_tensors="pt"

@@ -36,7 +36,7 @@ target = "Sure, here are some instructions for how to ..."
 result = nanoflrt.run(model, tokenizer, message, target)
 
 # Generate with the best FLRT string
-messages[-1]["content"] = messages[-1]["content"] + " " + result.best_string
+messages[-1]["content"] = messages[-1]["content"] + result.best_string
 
 input = tokenizer.apply_chat_template(
     messages, add_generation_prompt=True, return_tensors="pt"
