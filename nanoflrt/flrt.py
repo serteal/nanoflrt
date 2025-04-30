@@ -2,6 +2,7 @@ import copy
 import gc
 import logging
 from dataclasses import dataclass
+from typing import Callable
 
 import torch
 from jaxtyping import Float
@@ -45,6 +46,7 @@ class FLRTConfig:
     seed: int | None = 42
     verbose: bool = False
     use_kv_cache: bool = True
+    activation_loss_weight: float = 1.0
 
 
 @dataclass
@@ -53,7 +55,6 @@ class FLRTResult:
     best_loss: float
     losses: list[float]
     strings: list[str]
-    early_stopping: list[bool]
 
 
 class FLRT:
@@ -70,12 +71,18 @@ class FLRT:
         model: PreTrainedModel,
         tokenizer: PreTrainedTokenizer | PreTrainedTokenizerFast,
         config: FLRTConfig,
+        activation_loss_fn: Callable | None = None,
     ):
         self.model = model
         self.tokenizer = tokenizer
         self.config = config
+        self.activation_loss_fn = activation_loss_fn
 
-    def run(self, messages: str | list[dict[str, str]], target: str) -> FLRTResult:
+    def run(
+        self,
+        messages: str | list[dict[str, str]],
+        target: str,
+    ) -> FLRTResult:
         """Main step function for the FLRT optimizer.
 
         Note that this optimizer is designed to be run with a single batch and num steps (in
@@ -136,7 +143,6 @@ class FLRT:
                 ).past_key_values
 
         losses = []
-        early_stopping_condition = []
         optim_strings = []
         optim_idss = []
 
@@ -207,7 +213,7 @@ class FLRT:
                 dim=1,
             )
 
-            loss, stop_condition = find_executable_batch_size(
+            loss = find_executable_batch_size(
                 self.compute_candidates_loss, new_ids.shape[0]
             )(
                 input_embeds=input_embeds,
@@ -219,7 +225,6 @@ class FLRT:
             optim_id = new_ids[sorted_indices[0]]
             optim_str = self.tokenizer.decode(optim_id)
             optim_loss = loss[sorted_indices[0]]
-            stop_condition = stop_condition[sorted_indices[0]]
 
             buffer.replace_worst(optim_id, optim_loss)
 
@@ -247,7 +252,6 @@ class FLRT:
             best_loss=min(losses),
             losses=losses,
             strings=optim_strings,
-            early_stopping=early_stopping_condition,
         )
 
     def sample_candidates(
@@ -343,7 +347,6 @@ class FLRT:
         target_ids: Tensor,
     ):
         all_loss = []
-        all_stop_condition = []
         prefix_cache_batch = []
 
         for i in range(0, input_embeds.shape[0], search_batch_size):
@@ -368,34 +371,43 @@ class FLRT:
                             prefix_cache_batch
                         ),
                         use_cache=True,
+                        output_hidden_states=True,
                     )
                 else:
-                    outputs = self.model(inputs_embeds=input_embeds_batch)
+                    outputs = self.model(
+                        inputs_embeds=input_embeds_batch,
+                        output_hidden_states=True,  # We need hidden states for activation loss
+                    )
 
                 logits = outputs.logits
+                hidden_states = outputs.hidden_states
 
                 tmp = input_embeds.shape[1] - target_ids.shape[1]
                 shift_logits = logits[..., tmp - 1 : -1, :].contiguous()
                 shift_labels = target_ids.repeat(current_batch_size, 1)
 
-                loss = torch.nn.functional.cross_entropy(
+                ce_loss = torch.nn.functional.cross_entropy(
                     shift_logits.view(-1, shift_logits.size(-1)),
                     shift_labels.view(-1),
                     reduction="none",
                 )
-                loss = loss.view(current_batch_size, -1).mean(dim=-1)
-                all_loss.append(loss)
+                ce_loss = ce_loss.view(current_batch_size, -1).mean(dim=-1)
 
-                stop_condition = torch.all(
-                    torch.argmax(shift_logits, dim=-1) == shift_labels, dim=-1
-                )
-                all_stop_condition.append(stop_condition)
+                if self.activation_loss_fn is not None:
+                    activation_loss = self.activation_loss_fn(hidden_states)
+                    total_loss = (
+                        ce_loss + self.config.activation_loss_weight * activation_loss
+                    )
+                else:
+                    total_loss = ce_loss
+
+                all_loss.append(total_loss)
 
                 del outputs
                 gc.collect()
                 torch.cuda.empty_cache()
 
-        return torch.cat(all_loss, dim=0), torch.cat(all_stop_condition, dim=0)
+        return torch.cat(all_loss, dim=0)
 
 
 def run(
@@ -404,6 +416,7 @@ def run(
     messages: str | list[dict[str, str]],
     target: str,
     config: FLRTConfig | None = None,
+    activation_loss_fn: Callable | None = None,
 ) -> FLRTResult:
     """Generates a single optimized string using FLRT.
 
@@ -413,6 +426,9 @@ def run(
         messages: The conversation to use for optimization.
         target: The target generation.
         config: The FLRT configuration to use.
+        activation_loss_fn: Optional callable that takes hidden states and returns a scalar loss.
+            The function should take a tuple(num_layers) of tensors(batch_size, sequence_length, hidden_size)
+            and return a tensor of shape (batch_size,).
 
     Returns:
         A FLRTResult object that contains losses and the optimized strings.
@@ -422,6 +438,6 @@ def run(
 
     logger.setLevel(logging.DEBUG if config.verbose else logging.INFO)
 
-    flrt = FLRT(model, tokenizer, config)
+    flrt = FLRT(model, tokenizer, config, activation_loss_fn)
     result = flrt.run(messages, target)
     return result
