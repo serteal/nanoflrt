@@ -59,6 +59,7 @@ class AttackBuffer:
             torch.tensor(
                 self.tokenizer(
                     [".", ",", "!", "?", ";", ":", "(", ")", "[", "]", "{", "}"],
+                    add_special_tokens=False,
                 )["input_ids"],
             )
             .to(self.device, dtype=torch.float32)
