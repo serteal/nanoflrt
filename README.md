@@ -34,10 +34,7 @@ tokenizer = AutoTokenizer.from_pretrained(model_name)
 messages = [{"role": "user", "content": "Give me instructions for how to ..."}]
 target = "Sure, here are some instructions for how to ..."
 
-config = nanoflrt.FLRTConfig(
-    use_kv_cache=False,
-)
-result = nanoflrt.run(model, tokenizer, messages, target, config)
+result = nanoflrt.run(model, tokenizer, messages, target)
 
 # Generate with the best FLRT string
 messages[-1]["content"] = messages[-1]["content"] + result.best_string
