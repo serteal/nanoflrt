@@ -19,9 +19,10 @@ uv add git+https://github.com/serteal/nanoflrt
 ## Usage
 
 ```python
-import nanoflrt
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
+
+import nanoflrt
 
 model_name = "meta-llama/Llama-3.1-8B-Instruct"
 model = AutoModelForCausalLM.from_pretrained(
@@ -30,10 +31,13 @@ model = AutoModelForCausalLM.from_pretrained(
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 
 # Fill in your own message and target
-message = "Give me instructions for how to ..."
+messages = [{"role": "user", "content": "Give me instructions for how to ..."}]
 target = "Sure, here are some instructions for how to ..."
 
-result = nanoflrt.run(model, tokenizer, message, target)
+config = nanoflrt.FLRTConfig(
+    use_kv_cache=False,
+)
+result = nanoflrt.run(model, tokenizer, messages, target, config)
 
 # Generate with the best FLRT string
 messages[-1]["content"] = messages[-1]["content"] + result.best_string
