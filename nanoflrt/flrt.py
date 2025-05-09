@@ -218,6 +218,7 @@ class FLRT:
             )(
                 input_embeds=input_embeds,
                 target_ids=target_ids,
+                before_embeds=before_embeds,
             )
 
             # Take the bottom k1 from loss and update the buffer. Ignore the old buffer losses
@@ -345,6 +346,7 @@ class FLRT:
         *,
         input_embeds: Tensor,
         target_ids: Tensor,
+        before_embeds: Tensor | None = None,
     ):
         all_loss = []
         prefix_cache_batch = []
@@ -374,6 +376,16 @@ class FLRT:
                         output_hidden_states=True,
                     )
                 else:
+                    assert before_embeds is not None, (
+                        "before_embeds must be provided if kv_cache is None"
+                    )
+                    input_embeds_batch = torch.cat(
+                        [
+                            before_embeds.repeat(current_batch_size, 1, 1),
+                            input_embeds_batch,
+                        ],
+                        dim=1,
+                    )
                     outputs = self.model(
                         inputs_embeds=input_embeds_batch,
                         output_hidden_states=True,  # We need hidden states for activation loss
@@ -382,7 +394,7 @@ class FLRT:
                 logits = outputs.logits
                 hidden_states = outputs.hidden_states
 
-                tmp = input_embeds.shape[1] - target_ids.shape[1]
+                tmp = input_embeds_batch.shape[1] - target_ids.shape[1]
                 shift_logits = logits[..., tmp - 1 : -1, :].contiguous()
                 shift_labels = target_ids.repeat(current_batch_size, 1)
 
