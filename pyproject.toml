@@ -1,6 +1,6 @@
 [project]
 name = "nanoflrt"
-version = "0.1.0"
+version = "0.1.1"
 description = "A custom implementation of a variation of the FLRT algorithm"
 readme = "README.md"
 authors = [{ name = "Alex Serrano" }]
